@@ -18,7 +18,7 @@ A simple test extension for Canvas IDE to demonstrate basic extension functional
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/https://github.com/FLYBYME/canvas-extension-hello-world.git
    cd canvas-extension-hello-world
    ```
 
