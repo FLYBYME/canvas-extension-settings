@@ -1,0 +1,4 @@
+node_modules/
+dist/
+canvas-build.mjs
+*.log

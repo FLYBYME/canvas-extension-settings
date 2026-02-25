@@ -1,0 +1,16 @@
+{
+    "name": "canvas-extension-hello-world",
+    "version": "1.0.0",
+    "description": "A simple test extension for Canvas IDE",
+    "main": "dist/bundle.js",
+    "scripts": {
+        "build": "esbuild src/index.ts --bundle --outfile=dist/bundle.js --platform=browser --format=esm"
+    },
+    "devDependencies": {
+        "esbuild": "^0.20.0"
+    },
+    "peerDependencies": {
+        "react": "^18.0.0",
+        "react-dom": "^18.0.0"
+    }
+}
