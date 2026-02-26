@@ -5,7 +5,7 @@ export const SettingsManagerExtension: Extension = {
     name: 'Settings Manager',
     version: '1.0.0',
 
-    activate: async (context: ExtensionContext): Promise<void> {
+    activate: async (context: ExtensionContext): Promise<void> => {
         const ide = context.ide;
 
         // 1. Define the ViewProvider that renders the Settings UI
