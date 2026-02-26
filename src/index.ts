@@ -56,14 +56,14 @@ export const HelloWorldExtension: Extension = {
         };
 
         // Register the provider with the IDE
-        context.ide.views.registerProvider('left-panel', myProvider);
+        context.ide.views.registerProvider('right-panel', myProvider);
 
         // Do not auto-render immediately; let FileTree be default
 
         // 4. Add an Activity Bar Icon to trigger the view
         context.ide.activityBar.registerItem({
             id: myProvider.id,
-            location: 'left-panel',
+            location: 'right-panel',
             icon: 'fas fa-plug',
             title: 'Hello Extension',
             order: 100
