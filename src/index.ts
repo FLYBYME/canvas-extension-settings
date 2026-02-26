@@ -1,12 +1,12 @@
 import { Extension, ExtensionContext } from 'canvas-ide-core';
 import { ViewProvider } from 'canvas-ide-core';
 
-export default class SettingsManagerExtension implements Extension {
-    public id = 'core.settings.manager';
-    public name = 'Settings Manager';
-    public version = '1.0.0';
+export const SettingsManagerExtension: Extension = {
+    id: 'core.settings.manager',
+    name: 'Settings Manager',
+    version: '1.0.0',
 
-    public async activate(context: ExtensionContext): Promise<void> {
+    activate: async (context: ExtensionContext): Promise<void> => {
         const ide = context.ide;
 
         // 1. Define the ViewProvider that renders the Settings UI
