@@ -1,233 +1,352 @@
-import { Extension, ExtensionContext, ViewProvider } from 'canvas-ide-core';
+/**
+ * SettingsEditorExtension – Visual settings editor that opens as a center-panel tab.
+ *
+ * Reads every ConfigurationNode from the ConfigurationRegistry and renders
+ * typed form controls (checkbox, number, select, text) that write back
+ * through ConfigurationService.update().
+ */
 
-export const SettingsManagerExtension: Extension = {
-    id: 'core.settings.manager',
-    name: 'Settings Manager',
+import { Extension, ExtensionContext, ViewProvider, ConfigurationNode, ConfigurationProperty } from 'canvas-ide-core';
+
+// ── Helpers ──────────────────────────────────────────────────
+
+function capitalize(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function friendlyLabel(key: string): string {
+    // 'editor.fontSize' → 'Font Size'
+    const parts = key.split('.');
+    const raw = parts[parts.length - 1];
+    return raw.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+}
+
+// ── Extension ────────────────────────────────────────────────
+
+export const SettingsEditorExtension: Extension = {
+    id: 'core.settingsEditor',
+    name: 'Settings Editor',
     version: '1.0.0',
 
-    activate: async (context: ExtensionContext): Promise<void> => {
-        const ide = context.ide;
+    activate(context: ExtensionContext) {
+        const { ide } = context;
 
-        // 1. Define the ViewProvider that renders the Settings UI
-        const settingsView: ViewProvider = {
-            id: 'core.settings.view',
+        // ── View Provider (renders inside center-panel tab) ──
+
+        const settingsProvider: ViewProvider = {
+            id: 'core.settingsEditor.view',
             name: 'Settings',
-            resolveView: (container, disposables) => {
-                // Setup container styling
-                container.style.padding = '20px 40px';
-                container.style.overflowY = 'auto';
-                container.style.color = 'var(--text-main)';
-                container.style.fontFamily = 'var(--font-ui, sans-serif)';
-                container.style.backgroundColor = 'var(--bg-panel)';
 
-                // Header
-                const header = document.createElement('h1');
-                header.textContent = 'Settings';
-                header.style.borderBottom = '1px solid var(--border-color)';
-                header.style.paddingBottom = '10px';
-                header.style.marginBottom = '20px';
-                container.appendChild(header);
+            resolveView(container: HTMLElement, disposables: { dispose: () => void }[]) {
+                container.innerHTML = '';
 
-                // Fetch all configuration schemas
-                const nodes = ide.configurationRegistry.getAll();
+                const wrapper = document.createElement('div');
+                wrapper.className = 'settings-editor';
+                // Make the wrapper take up remaining space in the flex container and scroll
+                wrapper.style.flex = '1';
+                wrapper.style.minHeight = '0';
+                wrapper.style.overflowY = 'auto';
+                container.appendChild(wrapper);
 
-                // Build a section for each configuration node
-                nodes.forEach(node => {
+                // ── Header ─────────────────────────────────
+                const header = document.createElement('div');
+                header.className = 'settings-header';
+
+                const title = document.createElement('h1');
+                title.className = 'settings-title';
+                title.textContent = 'Settings';
+                header.appendChild(title);
+
+                const subtitle = document.createElement('p');
+                subtitle.className = 'settings-subtitle';
+                subtitle.textContent = 'Manage your editor preferences. Changes are saved automatically.';
+                header.appendChild(subtitle);
+
+                // ── Search bar ─────────────────────────────
+                const searchWrap = document.createElement('div');
+                searchWrap.className = 'settings-search-wrap';
+                const searchIcon = document.createElement('i');
+                searchIcon.className = 'fas fa-search settings-search-icon';
+                searchWrap.appendChild(searchIcon);
+
+                const searchInput = document.createElement('input');
+                searchInput.type = 'text';
+                searchInput.placeholder = 'Search settings…';
+                searchInput.className = 'settings-search';
+                searchInput.id = 'settings-search';
+                searchWrap.appendChild(searchInput);
+                header.appendChild(searchWrap);
+
+                // Reset All button
+                const resetAll = document.createElement('button');
+                resetAll.className = 'settings-reset-all';
+                resetAll.innerHTML = '<i class="fas fa-undo"></i> Reset All';
+                resetAll.title = 'Reset all settings to defaults';
+                resetAll.addEventListener('click', async () => {
+                    await ide.settings.resetAll();
+                    // Re-render to reflect default values
+                    settingsProvider.resolveView(container, disposables);
+                    ide.notifications.notify('All settings reset to defaults', 'info');
+                });
+                header.appendChild(resetAll);
+
+                wrapper.appendChild(header);
+
+                // ── Sections ───────────────────────────────
+                const sectionsWrap = document.createElement('div');
+                sectionsWrap.className = 'settings-sections';
+
+                const nodes: ConfigurationNode[] = ide.configurationRegistry.getAll();
+
+                for (const node of nodes) {
                     const section = document.createElement('div');
-                    section.style.marginBottom = '30px';
+                    section.className = 'settings-section';
+                    section.dataset.sectionId = node.id;
 
                     const sectionTitle = document.createElement('h2');
-                    sectionTitle.textContent = node.title;
-                    sectionTitle.style.fontSize = '18px';
-                    sectionTitle.style.color = 'var(--accent)';
-                    sectionTitle.style.marginBottom = '12px';
+                    sectionTitle.className = 'settings-section-title';
+                    sectionTitle.innerHTML = `<i class="fas fa-chevron-down settings-section-chevron"></i> ${capitalize(node.title)}`;
                     section.appendChild(sectionTitle);
 
-                    // Build UI for each property in the node
-                    Object.entries(node.properties).forEach(([key, prop]) => {
-                        const settingRow = document.createElement('div');
-                        settingRow.style.marginBottom = '16px';
-                        settingRow.style.display = 'flex';
-                        settingRow.style.flexDirection = 'column';
-                        settingRow.style.gap = '6px';
+                    const sectionBody = document.createElement('div');
+                    sectionBody.className = 'settings-section-body';
 
-                        // Label
-                        const label = document.createElement('label');
-                        label.textContent = key;
-                        label.style.fontWeight = '600';
-                        label.style.fontSize = '14px';
-
-                        // Description
-                        const description = document.createElement('div');
-                        description.textContent = prop.description;
-                        description.style.fontSize = '12px';
-                        description.style.color = 'var(--text-muted)';
-                        description.style.marginBottom = '4px';
-
-                        // Input Wrapper
-                        const inputWrapper = document.createElement('div');
-                        inputWrapper.style.display = 'flex';
-                        inputWrapper.style.alignItems = 'center';
-                        inputWrapper.style.gap = '10px';
-
-                        // Determine current value
-                        const currentValue = ide.settings.get(key) ?? prop.default;
-
-                        // Input Element
-                        let inputEl: HTMLElement;
-
-                        if (prop.type === 'boolean') {
-                            const checkbox = document.createElement('input');
-                            checkbox.type = 'checkbox';
-                            checkbox.checked = Boolean(currentValue);
-                            checkbox.addEventListener('change', async (e) => {
-                                const target = e.target as HTMLInputElement;
-                                try {
-                                    await ide.settings.update(key, target.checked);
-                                } catch (err: any) {
-                                    ide.notifications.notify(`Failed to update ${key}: ${err.message}`, 'error');
-                                    target.checked = !target.checked; // revert UI
-                                }
-                            });
-                            inputEl = checkbox;
-                        }
-                        else if (prop.type === 'enum' && prop.enum) {
-                            const select = document.createElement('select');
-                            select.style.padding = '4px 8px';
-                            select.style.backgroundColor = 'var(--bg-input)';
-                            select.style.color = 'var(--text-main)';
-                            select.style.border = '1px solid var(--border-color)';
-
-                            prop.enum.forEach(opt => {
-                                const option = document.createElement('option');
-                                option.value = opt;
-                                option.textContent = opt;
-                                if (opt === currentValue) option.selected = true;
-                                select.appendChild(option);
-                            });
-
-                            select.addEventListener('change', async (e) => {
-                                const target = e.target as HTMLSelectElement;
-                                try {
-                                    await ide.settings.update(key, target.value);
-                                } catch (err: any) {
-                                    ide.notifications.notify(`Failed to update ${key}: ${err.message}`, 'error');
-                                    target.value = currentValue; // revert UI
-                                }
-                            });
-                            inputEl = select;
-                        }
-                        else if (prop.type === 'number') {
-                            const numberInput = document.createElement('input');
-                            numberInput.type = 'number';
-                            numberInput.value = String(currentValue);
-                            numberInput.style.padding = '4px 8px';
-                            numberInput.style.backgroundColor = 'var(--bg-input)';
-                            numberInput.style.color = 'var(--text-main)';
-                            numberInput.style.border = '1px solid var(--border-color)';
-
-                            numberInput.addEventListener('change', async (e) => {
-                                const target = e.target as HTMLInputElement;
-                                const val = Number(target.value);
-                                try {
-                                    await ide.settings.update(key, val);
-                                } catch (err: any) {
-                                    ide.notifications.notify(`Failed to update ${key}: ${err.message}`, 'error');
-                                    target.value = String(currentValue); // revert UI
-                                }
-                            });
-                            inputEl = numberInput;
-                        }
-                        else {
-                            // String or fallback
-                            const textInput = document.createElement('input');
-                            textInput.type = 'text';
-                            textInput.value = String(currentValue);
-                            textInput.style.padding = '4px 8px';
-                            textInput.style.backgroundColor = 'var(--bg-input)';
-                            textInput.style.color = 'var(--text-main)';
-                            textInput.style.border = '1px solid var(--border-color)';
-                            textInput.style.width = '300px';
-
-                            textInput.addEventListener('change', async (e) => {
-                                const target = e.target as HTMLInputElement;
-                                try {
-                                    await ide.settings.update(key, target.value);
-                                } catch (err: any) {
-                                    ide.notifications.notify(`Failed to update ${key}: ${err.message}`, 'error');
-                                    target.value = String(currentValue); // revert UI
-                                }
-                            });
-                            inputEl = textInput;
-                        }
-
-                        // Reset Button
-                        const resetBtn = document.createElement('button');
-                        resetBtn.innerHTML = '<i class="fas fa-undo"></i>';
-                        resetBtn.title = 'Reset to default';
-                        resetBtn.className = 'dialog-btn dialog-btn-secondary';
-                        resetBtn.style.padding = '4px 8px';
-                        resetBtn.addEventListener('click', async () => {
-                            await ide.settings.reset(key);
-                            // Lazy UI refresh: ideally we'd listen to the EventBus, but here we manually update the node
-                            const newVal = ide.settings.get(key) ?? prop.default;
-                            if (prop.type === 'boolean') (inputEl as HTMLInputElement).checked = Boolean(newVal);
-                            else (inputEl as HTMLInputElement).value = String(newVal);
-                        });
-
-                        inputWrapper.appendChild(inputEl);
-                        inputWrapper.appendChild(resetBtn);
-
-                        settingRow.appendChild(label);
-                        settingRow.appendChild(description);
-                        settingRow.appendChild(inputWrapper);
-                        section.appendChild(settingRow);
+                    // Collapse / expand
+                    sectionTitle.addEventListener('click', () => {
+                        const isCollapsed = section.classList.toggle('collapsed');
+                        sectionTitle.querySelector('.settings-section-chevron')!
+                            .classList.toggle('collapsed', isCollapsed);
                     });
 
-                    container.appendChild(section);
-                });
+                    for (const [key, prop] of Object.entries(node.properties)) {
+                        const row = buildSettingRow(key, prop, ide);
+                        sectionBody.appendChild(row);
+                    }
 
-                // Listen to external configuration changes to keep UI in sync
-                const subId = ide.commands.on('configuration.changed', (event: any) => {
-                    // In a production app, you would target the specific input element and update it here
-                    // to reflect settings changed via command palette or other extensions.
+                    section.appendChild(sectionBody);
+                    sectionsWrap.appendChild(section);
+                }
+
+                wrapper.appendChild(sectionsWrap);
+
+                // ── Search filtering ───────────────────────
+                searchInput.addEventListener('input', () => {
+                    const q = searchInput.value.toLowerCase().trim();
+                    const rows = sectionsWrap.querySelectorAll('.settings-row') as NodeListOf<HTMLElement>;
+                    const sections = sectionsWrap.querySelectorAll('.settings-section') as NodeListOf<HTMLElement>;
+
+                    for (const row of rows) {
+                        const text = (row.dataset.key || '').toLowerCase() + ' ' +
+                            (row.querySelector('.settings-row-label')?.textContent || '').toLowerCase() +
+                            (row.querySelector('.settings-row-description')?.textContent || '').toLowerCase();
+                        row.style.display = !q || text.includes(q) ? '' : 'none';
+                    }
+
+                    // Hide sections with all rows hidden
+                    for (const sec of sections) {
+                        const visibleRows = sec.querySelectorAll('.settings-row:not([style*="display: none"])');
+                        sec.style.display = visibleRows.length === 0 && q ? 'none' : '';
+                    }
                 });
-                disposables.push({ dispose: () => ide.commands.off(subId) });
-            }
+            },
         };
 
-        // 2. Register the view in the center panel so it opens like a file tab
-        ide.views.registerProvider('center-panel', settingsView);
-        context.subscriptions.push({ dispose: () => ide.views.unregisterProvider('center-panel', settingsView.id) });
+        // ── Build a single setting row ──────────────────────
 
-        // 3. Register the Command to open settings
-        const openSettingsCmd = {
+        function buildSettingRow(
+            key: string,
+            prop: ConfigurationProperty,
+            ideRef: typeof ide,
+        ): HTMLElement {
+            const row = document.createElement('div');
+            row.className = 'settings-row';
+            row.dataset.key = key;
+
+            // Left side: label + description
+            const info = document.createElement('div');
+            info.className = 'settings-row-info';
+
+            const label = document.createElement('div');
+            label.className = 'settings-row-label';
+            label.textContent = friendlyLabel(key);
+            info.appendChild(label);
+
+            const keyLabel = document.createElement('code');
+            keyLabel.className = 'settings-row-key';
+            keyLabel.textContent = key;
+            info.appendChild(keyLabel);
+
+            const desc = document.createElement('div');
+            desc.className = 'settings-row-description';
+            desc.textContent = prop.description;
+            info.appendChild(desc);
+
+            row.appendChild(info);
+
+            // Right side: control
+            const control = document.createElement('div');
+            control.className = 'settings-row-control';
+
+            const currentValue = ideRef.settings.get(key);
+
+            switch (prop.type) {
+                case 'boolean': {
+                    const toggle = document.createElement('label');
+                    toggle.className = 'settings-toggle';
+
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.checked = currentValue as boolean;
+                    cb.id = `setting-${key}`;
+                    cb.addEventListener('change', async () => {
+                        try {
+                            await ideRef.settings.update(key, cb.checked);
+                        } catch (err: any) {
+                            ideRef.notifications.notify(err.message, 'error');
+                            cb.checked = !cb.checked;
+                        }
+                    });
+
+                    const slider = document.createElement('span');
+                    slider.className = 'settings-toggle-slider';
+
+                    toggle.appendChild(cb);
+                    toggle.appendChild(slider);
+                    control.appendChild(toggle);
+                    break;
+                }
+
+                case 'number': {
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.className = 'settings-input settings-input-number';
+                    input.value = String(currentValue ?? prop.default);
+                    input.id = `setting-${key}`;
+                    input.addEventListener('change', async () => {
+                        const v = parseFloat(input.value);
+                        if (!isNaN(v)) {
+                            try {
+                                await ideRef.settings.update(key, v);
+                            } catch (err: any) {
+                                ideRef.notifications.notify(err.message, 'error');
+                                input.value = String(ideRef.settings.get(key) ?? prop.default);
+                            }
+                        }
+                    });
+                    control.appendChild(input);
+                    break;
+                }
+
+                case 'enum': {
+                    const select = document.createElement('select');
+                    select.className = 'settings-select';
+                    select.id = `setting-${key}`;
+                    for (const opt of prop.enum || []) {
+                        const option = document.createElement('option');
+                        option.value = opt;
+                        option.textContent = opt;
+                        if (opt === currentValue) option.selected = true;
+                        select.appendChild(option);
+                    }
+                    select.addEventListener('change', async () => {
+                        try {
+                            await ideRef.settings.update(key, select.value);
+                        } catch (err: any) {
+                            ideRef.notifications.notify(err.message, 'error');
+                            select.value = String(ideRef.settings.get(key) ?? prop.default);
+                        }
+                    });
+                    control.appendChild(select);
+                    break;
+                }
+
+                case 'string':
+                default: {
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'settings-input';
+                    input.value = String(currentValue ?? prop.default ?? '');
+                    input.id = `setting-${key}`;
+                    input.addEventListener('change', async () => {
+                        try {
+                            await ideRef.settings.update(key, input.value);
+                        } catch (err: any) {
+                            ideRef.notifications.notify(err.message, 'error');
+                            input.value = String(ideRef.settings.get(key) ?? prop.default ?? '');
+                        }
+                    });
+                    control.appendChild(input);
+                    break;
+                }
+            }
+
+            // Reset button per row
+            const resetBtn = document.createElement('button');
+            resetBtn.className = 'settings-row-reset';
+            resetBtn.title = 'Reset to default';
+            resetBtn.innerHTML = '<i class="fas fa-undo"></i>';
+            resetBtn.addEventListener('click', async () => {
+                await ideRef.settings.reset(key);
+                // Update the control to reflect the default value
+                const defaultVal = prop.default;
+                const el = control.querySelector(`#setting-${CSS.escape(key)}`) as HTMLInputElement | HTMLSelectElement | null;
+                if (el) {
+                    if (el instanceof HTMLSelectElement) {
+                        el.value = String(defaultVal);
+                    } else if (el.type === 'checkbox') {
+                        (el as HTMLInputElement).checked = defaultVal as boolean;
+                    } else {
+                        el.value = String(defaultVal);
+                    }
+                }
+                ideRef.notifications.notify(`Reset "${key}" to default`, 'info', 3000);
+            });
+            control.appendChild(resetBtn);
+
+            row.appendChild(control);
+            return row;
+        }
+
+        // ── Register provider in center-panel ───────────────
+
+        ide.views.registerProvider('center-panel', settingsProvider);
+
+        // ── Open command ────────────────────────────────────
+
+        const openSettingsCmd = ide.commands.registerDisposable({
             id: 'settings.open',
-            label: 'Preferences: Open Settings',
-            keybinding: 'Ctrl+,', // Standard IDE shortcut for settings
-            category: 'Preferences',
+            label: 'Open Settings',
+            keybinding: 'Ctrl+,',
             handler: () => {
-                ide.views.renderView('center-panel', settingsView.id);
-            }
-        };
-        ide.commands.register(openSettingsCmd);
-        context.subscriptions.push({ dispose: () => ide.commands.unregister(openSettingsCmd.id) });
-
-        // 4. Bind the IDE event triggered from the Command Palette [cite: 749, 750]
-        const legacyEventSub = ide.commands.on('ide:open_settings', () => {
-            ide.commands.execute('settings.open');
+                ide.views.renderView('center-panel', settingsProvider.id);
+            },
         });
-        context.subscriptions.push({ dispose: () => ide.commands.off(legacyEventSub) });
+        context.subscriptions.push(openSettingsCmd);
 
-        // 5. Add a gear icon to the Activity Bar
+        // ── Menu entry (under File) ─────────────────────────
+        // We'll add a settings entry to the existing menu via the IDE
+        ide.layout.header.menuBar.addMenuItem({
+            id: 'settings-menu',
+            label: 'Preferences',
+            items: [
+                {
+                    id: 'settings-menu:open',
+                    label: 'Settings',
+                    shortcut: 'Ctrl+,',
+                    icon: 'fas fa-cog',
+                    onClick: () => ide.commands.execute('settings.open'),
+                },
+            ],
+        });
+
+        // ── Activity bar icon ───────────────────────────────
         ide.activityBar.registerItem({
-            id: settingsView.id,
-            location: 'left-panel', // Place it at the bottom of the left sidebar like VS Code
+            id: 'settings.activityBar',
+            location: 'left-panel',
             icon: 'fas fa-cog',
-            title: 'Manage Settings',
-            order: 9999,
+            title: 'Settings',
+            order: 999,
             onClick: () => ide.commands.execute('settings.open')
         });
-        context.subscriptions.push({ dispose: () => ide.activityBar.unregisterItem(settingsView.id) });
-    }
-}
+    },
+};
