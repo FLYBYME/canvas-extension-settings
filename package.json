@@ -7,7 +7,8 @@
         "build": "esbuild src/index.ts --bundle --outfile=dist/bundle.js --platform=browser --format=esm"
     },
     "devDependencies": {
-        "esbuild": "^0.20.0"
+        "esbuild": "^0.20.0",
+        "canvas-ide-core": "github:FLYBYME/IDE"
     },
     "peerDependencies": {
         "react": "^18.0.0",
